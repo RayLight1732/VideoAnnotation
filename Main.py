@@ -8,19 +8,21 @@ from enum import Enum
 from typing import Callable
 import math
 
+
 class DragAction(Enum):
     MOVE = 0  # 動画自体を移動
     EDIT_RECT = 1  # 範囲を変更
     CREATE_RECT = 2
     EDIT_CHILD_RECT = 3
 
+
 hoverOffset = 3
+
 
 class VideoRect:
     def __init__(self, start: float, end: float):
         self.start = start
         self.end = end
-
 
 
 class MainWindow(QMainWindow):
@@ -48,28 +50,38 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(container)
 
-class RectSelectProcessor():
 
-    def __init__(self,startTime,endTime,depth,update:Callable[[],],xOffset:Callable[[],int],setXOffset:Callable[[int],],setCursor:Callable[[any],]):
+class RectSelectProcessor:
+
+    def __init__(
+        self,
+        startTime,
+        endTime,
+        depth,
+        update: Callable[[],],
+        xOffset: Callable[[], int],
+        setXOffset: Callable[[int],],
+        setCursor: Callable[[any],],
+    ):
         self.isPressed = False
-        self._videoRect = VideoRect(startTime,endTime)
-        self.childProcessors:list[RectSelectProcessor] = []
+        self._videoRect = VideoRect(startTime, endTime)
+        self.childProcessors: list[RectSelectProcessor] = []
         self.depth = depth
         self.update = update
         self.xOffset = xOffset
         self.setXOffset = setXOffset
         self.setCursor = setCursor
         self.dragAction = None
-        self.point = QPoint(0,0)
+        self.point = QPoint(0, 0)
 
-    def videoRect(self)->VideoRect:
+    def videoRect(self) -> VideoRect:
         return self._videoRect
-    
-    def setVideoRect(self,videoRect:VideoRect):
+
+    def setVideoRect(self, videoRect: VideoRect):
         self._videoRect = videoRect
         self.update()
 
-    def onClick(self,point:QPoint,button):
+    def onClick(self, point: QPoint, button):
         if not self.isPressed:
             self.isPressed = True
             self.point: QPoint = point
@@ -88,43 +100,48 @@ class RectSelectProcessor():
                     if self.onRect(self.point) and self.depth <= 0:
                         rect = self.onRect(self.point)
                         self.dragAction = DragAction.EDIT_CHILD_RECT
-                        print("child")
                         self.targetProcessor = rect
-                        rect.onClick(point,button)
+                        rect.onClick(point, button)
                     else:
                         self.dragAction = DragAction.MOVE
-                        print("move")
             elif self.onRect(self.point) and self.depth <= 0:
                 rect = self.onRect(self.point)
                 self.dragAction = DragAction.EDIT_CHILD_RECT
-                print("child")
                 self.targetProcessor = rect
-                rect.onClick(point,button)
+                rect.onClick(point, button)
             elif self.isInParentRect(self.point.x()):
                 self.dragAction = DragAction.CREATE_RECT
                 self.firstPixel = self.relToAbs(self.point.x())
                 startTime = pixelToTime(self.firstPixel)
                 endTime = pixelToTime(self.firstPixel)
-                newProcessor = RectSelectProcessor(startTime,endTime,self.depth+1,self.update,self.xOffset,self.setXOffset,self.setCursor)
+                newProcessor = RectSelectProcessor(
+                    startTime,
+                    endTime,
+                    self.depth + 1,
+                    self.update,
+                    self.xOffset,
+                    self.setXOffset,
+                    self.setCursor,
+                )
                 self.childProcessors.append(newProcessor)
                 self.targetProcessor = newProcessor
-            
+
         self.update()
 
-    def mouseMoveEvent(self,point:QPoint):
+    def mouseMoveEvent(self, point: QPoint):
         oldPoint = self.point
         self.point = point
         if self.dragAction == DragAction.MOVE:
-            self.setXOffset(self.xOffset()+point.x() - oldPoint.x())
+            self.setXOffset(self.xOffset() + point.x() - oldPoint.x())
         elif self.dragAction == DragAction.EDIT_RECT:
             pass
         elif self.dragAction == DragAction.CREATE_RECT:
-            mouse_x = min(self.absToRel(timeToPixel(self._videoRect.end)),point.x())
-            mouse_x = max(mouse_x,self.absToRel(self._videoRect.start))
+            mouse_x = min(self.absToRel(timeToPixel(self._videoRect.end)), point.x())
+            mouse_x = max(mouse_x, self.absToRel(self._videoRect.start))
             absX = self.relToAbs(mouse_x)
             start = pixelToTime(min(absX, self.firstPixel))
             end = pixelToTime(max(absX, self.firstPixel))
-            self.targetProcessor.setVideoRect(VideoRect(start,end))
+            self.targetProcessor.setVideoRect(VideoRect(start, end))
         elif self.dragAction == DragAction.EDIT_CHILD_RECT:
             self.targetProcessor.mouseMoveEvent(point)
         elif self.onClipEdge(point) != None:
@@ -138,8 +155,7 @@ class RectSelectProcessor():
 
         self.update()
 
-    def mouseReleaseEvent(self, point:QPoint):
-        print(f"release {self.depth} child:{len(self.childProcessors)}")
+    def mouseReleaseEvent(self, point: QPoint):
         if self.isPressed:
             self.isPressed = False
             if self.dragAction == DragAction.EDIT_CHILD_RECT:
@@ -147,8 +163,6 @@ class RectSelectProcessor():
             self.dragAction = None
             self.childProcessors = mergeClipRect(self.childProcessors)
             self.update()
-        print(f"release {self.depth} child:{len(self.childProcessors)}")
-
 
     def onClipEdge(self, point: QPoint) -> tuple[RectSelectProcessor, bool] | None:
         for childProcessor in self.childProcessors:
@@ -156,21 +170,21 @@ class RectSelectProcessor():
             start = self.absToRel(timeToPixel(childRect.start))
             end = self.absToRel(timeToPixel(childRect.end))
             x = point.x()
-            if -hoverOffset <=x-start < hoverOffset:
+            if -hoverOffset <= x - start < hoverOffset:
                 return (childProcessor, True)
-            elif -hoverOffset<=end-x < hoverOffset:
+            elif -hoverOffset <= end - x < hoverOffset:
                 return (childProcessor, False)
         return None
-    
-    def onRect(self,point:QPoint) -> RectSelectProcessor|None:
+
+    def onRect(self, point: QPoint) -> RectSelectProcessor | None:
         for childProcessor in self.childProcessors:
             rect = childProcessor.videoRect()
             start = self.absToRel(timeToPixel(rect.start))
             end = self.absToRel(timeToPixel(rect.end))
-            if start+hoverOffset <= point.x() <= end+hoverOffset:
+            if start + hoverOffset <= point.x() <= end + hoverOffset:
                 return childProcessor
         return None
-    
+
     # 絶対座標から現在のオフセットを勘案した画面上の座標に変換
     def absToRel(self, x: int):
         return x + self.xOffset()
@@ -178,45 +192,65 @@ class RectSelectProcessor():
     # 画面上の座標から絶対座標に変換
     def relToAbs(self, x: int):
         return x - self.xOffset()
-    
-    def isInParentRect(self,x:int):
-        return  self.absToRel(timeToPixel(self._videoRect.start)) <= x and x <= self.absToRel(timeToPixel(self._videoRect.end))
-    
+
+    def isInParentRect(self, x: int):
+        return self.absToRel(
+            timeToPixel(self._videoRect.start)
+        ) <= x and x <= self.absToRel(timeToPixel(self._videoRect.end))
+
 
 class RectSelectWidget(QWidget):
-    def __init__(self,length, parent = None,):
-        super(RectSelectWidget,self).__init__(parent)
+    def __init__(
+        self,
+        length,
+        parent=None,
+    ):
+        super(RectSelectWidget, self).__init__(parent)
         self.x_offset = 0
         self.setMouseTracking(True)
-        self.parentProcessor = RectSelectProcessor(0,length,0,self.update,lambda:self.x_offset,self.setXOffset,self.setCursor)
+        self.parentProcessor = RectSelectProcessor(
+            0,
+            length,
+            0,
+            self.update,
+            lambda: self.x_offset,
+            self.setXOffset,
+            self.setCursor,
+        )
 
-    def setXOffset(self,xOffset:int):
+    def setXOffset(self, xOffset: int):
         self.x_offset = xOffset
-        print(f"set x offset {xOffset}")
 
     def mousePressEvent(self, event):
-        self.parentProcessor.onClick(event.pos(),event.button())
+        self.parentProcessor.onClick(event.pos(), event.button())
+
     def mouseMoveEvent(self, event):
         self.parentProcessor.mouseMoveEvent(event.pos())
 
     def mouseReleaseEvent(self, event):
         self.parentProcessor.mouseReleaseEvent(event.pos())
 
-    def paintEvent(self,event):
+    def paintEvent(self, event):
         painter = QPainter(self)
+        painter.begin(self)
         parentRect = self.parentProcessor.videoRect()
         parentStartTime = parentRect.start
         parentEndTime = parentRect.end
         parentStartPixel = self.absToRel(timeToPixel(parentStartTime))
         parentEndPixel = self.absToRel(timeToPixel(parentEndTime))
-        painter.fillRect(parentStartPixel,0,parentEndPixel-parentStartPixel,self.height(), Qt.yellow)
+        painter.fillRect(
+            parentStartPixel,
+            0,
+            parentEndPixel - parentStartPixel,
+            self.height(),
+            Qt.yellow,
+        )
 
         painter.setBrush(Qt.red)
         for x in range(0, self.size().width()):
             if (x - self.x_offset) % 10 == 0:
                 painter.drawLine(x, 0, x, self.height())
 
-        
         for childProcessor in self.parentProcessor.childProcessors:
             painter.setBrush(Qt.gray)
             childRect = childProcessor.videoRect()
@@ -231,7 +265,9 @@ class RectSelectWidget(QWidget):
                 endPixel = self.absToRel(timeToPixel(childRect.end))
                 width = endPixel - startPixel
                 painter.drawRect(startPixel, 0, width, self.height())
-    
+
+        painter.end()
+
     # 絶対座標から現在のオフセットを勘案した画面上の座標に変換
     def absToRel(self, x: int):
         return x + self.x_offset
@@ -239,10 +275,11 @@ class RectSelectWidget(QWidget):
     # 画面上の座標から絶対座標に変換
     def relToAbs(self, x: int):
         return x - self.x_offset
-    
+
+
 class ValidRectSelectWidget(RectSelectWidget):
-    def __init__(self, parent = None,start_x = 0,parent_width=0):
-        super(ValidRectSelectWidget,self).__init__(parent,start_x,parent_width)
+    def __init__(self, parent=None, start_x=0, parent_width=0):
+        super(ValidRectSelectWidget, self).__init__(parent, start_x, parent_width)
 
 
 def mergeClipRect(clipRects: list[RectSelectProcessor]) -> list[RectSelectProcessor]:
@@ -266,20 +303,29 @@ def mergeClipRect(clipRects: list[RectSelectProcessor]) -> list[RectSelectProces
                     break
             if edit == False:
                 break
-        newProcessor = RectSelectProcessor(start,end,clipRect.depth,clipRect.update,clipRect.xOffset,clipRect.setXOffset,clipRect.setCursor)
+        newProcessor = RectSelectProcessor(
+            start,
+            end,
+            clipRect.depth,
+            clipRect.update,
+            clipRect.xOffset,
+            clipRect.setXOffset,
+            clipRect.setCursor,
+        )
         newProcessor.childProcessors = mergeClipRect(childPrecessors)
         clipChild(newProcessor)
 
         result.append(newProcessor)
     return result
 
-def clipChild(processor:RectSelectProcessor):
+
+def clipChild(processor: RectSelectProcessor):
     newChildren = []
     parentRect = processor.videoRect()
     for child in processor.childProcessors:
         childRect = child.videoRect()
-        newStart = max(childRect.start,parentRect.start)
-        newEnd = min(childRect.end,parentRect.end)
+        newStart = max(childRect.start, parentRect.start)
+        newEnd = min(childRect.end, parentRect.end)
         if newStart < newEnd:
             child.videoRect().start = newStart
             child.videoRect().end = newEnd
