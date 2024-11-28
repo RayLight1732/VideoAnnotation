@@ -240,7 +240,7 @@ class RectSelectWidget(QWidget):
     def onButtonStateChanged(self, pressed, button_depth):
         # 移動できるといい
         # created by的なフラグをVideoRectに用意する
-        if 0 <= button_depth <= 1:
+        if 0 <= button_depth <= 1 and self.parentProcessor:
             self.parentProcessor.onButtonStateChanged(pressed, button_depth)
         else:
             # err

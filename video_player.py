@@ -64,7 +64,13 @@ class VideoData:
 
 
 class VideoPlayer(QWidget):
-    def __init__(self, time: GUIProperty, video_data: GUIProperty, parent=None):
+    def __init__(
+        self,
+        is_playing: GUIProperty,
+        time: GUIProperty,
+        video_data: GUIProperty,
+        parent=None,
+    ):
         """
         :param time: 動画の時間(float)
         :param video_data: 動画の情報 VideoData|None型
@@ -75,7 +81,7 @@ class VideoPlayer(QWidget):
         self.playSpeed = 1  # 倍率(整数倍)
         self.time = time
         self.time.addListener(self, self.onTimeChange)
-        self.is_playing = False
+        self.is_playing = is_playing
         self.video: cv2.VideoCapture | None = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.__onInterval)
@@ -125,7 +131,7 @@ class VideoPlayer(QWidget):
             and self.video
             and self.curret_frame < self.video_data.getValue().getFrameCount()
         ):
-            self.is_playing = True
+            self.is_playing.setValue(self, True)
             self.timer.setInterval(int(1000 / self.video_data.getValue().getFPS()))
             self.timer.start()
             self.playButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
@@ -133,7 +139,7 @@ class VideoPlayer(QWidget):
     def stopVideo(self):
         if self.isPlaying():
             self.timer.stop()
-            self.is_playing = False
+            self.is_playing.setValue(self, False)
             self.playButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
 
     def flipPlayStatus(self):
@@ -143,7 +149,7 @@ class VideoPlayer(QWidget):
             self.playVideo()
 
     def isPlaying(self) -> bool:
-        return self.is_playing
+        return self.is_playing.getValue()
 
     def setVideo(self, video: cv2.VideoCapture) -> float | None:
         """

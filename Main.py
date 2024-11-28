@@ -41,27 +41,32 @@ class MainWindow(QMainWindow):
         splitter.setPalette(splitter_palette)
 
         time = GUIProperty(0)
+        playing = GUIProperty(False)
+        playing.addListener(self, self.__onPlayStatusChanged)
         self._x_offset = GUIProperty(0)
         self._x_offset.addListener(self, self.onXOffsetChanged)
         self.video_data = GUIProperty(None)
         self.video_data.addListener(self, self.onVideoDataChanged)
-        self.video_player = VideoPlayer(time, self.video_data)
+        self.video_player = VideoPlayer(playing, time, self.video_data)
 
-        self._valid_button_pressed = False
-        self._danger_button_pressed = False
+        self.rect_selector = RectSelectWidget(time, self._x_offset, self.video_data)
+
         button_widget_layout = QHBoxLayout()
 
         self._valid_area_button = QPushButton()
         self._valid_area_button.setText("有効")
         self._valid_area_button.clicked.connect(self.onValidButtonClicked)
-        self.setValidButtonEnabled(False)
+
         button_widget_layout.addWidget(self._valid_area_button)
 
         self._danger_area_button = QPushButton()
         self._danger_area_button.setText("危険")
         self._danger_area_button.clicked.connect(self.onDangerButtonClicked)
-        self.setDangerButtonEnabled(False)
+
         button_widget_layout.addWidget(self._danger_area_button)
+
+        self.setValidButtonEnabled(False)
+        self.setDangerButtonEnabled(False)
 
         top_widget = QWidget()
         top_widget_layout = QVBoxLayout(top_widget)
@@ -70,7 +75,7 @@ class MainWindow(QMainWindow):
 
         bottom_widget = QWidget()
         bottom_widget_layout = QVBoxLayout(bottom_widget)
-        self.rect_selector = RectSelectWidget(time, self._x_offset, self.video_data)
+
         self._slider = QSlider(Qt.Orientation.Horizontal)
         self._slider.setEnabled(False)
         self._slider.valueChanged.connect(self.onSliderPositionChanged)
@@ -91,23 +96,50 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(container)
 
+    def __onPlayStatusChanged(self, source, value):
+        if not value:
+            self.__setValidButtonPressed(False)
+
     def onValidButtonClicked(self):
-        self._valid_button_pressed = not self._valid_button_pressed
+        self.__setValidButtonPressed(not self._valid_button_pressed)
         self.setDangerButtonEnabled(self._valid_button_pressed)
-        self.rect_selector.onButtonStateChanged(self._valid_button_pressed, 0)
 
     def onDangerButtonClicked(self):
-        self._danger_button_pressed = not self._danger_button_pressed
+        self.__setDangerButtonPressed(not self._danger_button_pressed)
+
+    def __setDangerButtonPressed(self, pressed):
+        self._danger_button_pressed = pressed
         self.rect_selector.onButtonStateChanged(self._danger_button_pressed, 1)
+        if pressed:
+            self._danger_area_button.setStyleSheet("background-color: #90ee90")
+        else:
+            self._danger_area_button.setStyleSheet("background-color: #a9a9a9")
 
     def setDangerButtonEnabled(self, enabled: bool):
         self._danger_area_button.setEnabled(enabled)
-        if not enabled and self._danger_button_pressed:
-            self._danger_button_pressed = False
+        if not enabled:
+            self.__setDangerButtonPressed(False)
             self.rect_selector.onButtonStateChanged(False, 1)
+            self._danger_area_button.setStyleSheet("background-color: #ffffff")
+        else:
+            self.__setDangerButtonPressed(False)
+
+    def __setValidButtonPressed(self, pressed):
+        self._valid_button_pressed = pressed
+        self.rect_selector.onButtonStateChanged(self._valid_button_pressed, 0)
+        if pressed:
+            self._valid_area_button.setStyleSheet("background-color: #90ee90")
+        else:
+            self._valid_area_button.setStyleSheet("background-color: #a9a9a9")
 
     def setValidButtonEnabled(self, enabled: bool):
         self._valid_area_button.setEnabled(enabled)
+        if not enabled:
+            self.setDangerButtonEnabled(False)
+            self.__setValidButtonPressed(False)
+            self._valid_area_button.setStyleSheet("background-color: #ffffff")
+        else:
+            self.__setValidButtonPressed(False)
 
     def openVideo(self):
         fileName, _ = QFileDialog.getOpenFileName(
