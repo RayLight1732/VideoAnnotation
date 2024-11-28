@@ -1,15 +1,11 @@
 from __future__ import annotations
-import sys
 
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from enum import Enum
 from typing import Callable
-import math
-from VideoPlayer import VideoPlayer, VideoData
-from GUIProperty import GUIProperty
-import cv2
+from gui_property import GUIProperty
 from utils import pixelToTime, timeToPixel
 
 

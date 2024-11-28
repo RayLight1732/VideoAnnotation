@@ -1,4 +1,3 @@
-from __future__ import annotations
 import sys
 import cv2
 from PyQt5.QtMultimedia import QMediaContent
@@ -13,7 +12,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QImage, QPainter
 from PyQt5.QtCore import QTimer, Qt, QRect, QUrl, QSize
-from GUIProperty import GUIProperty
+from gui_property import GUIProperty
 
 
 class ImageRenderer(QWidget):
