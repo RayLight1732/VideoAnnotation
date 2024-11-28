@@ -7,22 +7,13 @@ from PyQt5.QtWidgets import *
 from enum import Enum
 from typing import Callable
 import math
-
-
-class DragAction(Enum):
-    MOVE = 0  # 動画自体を移動
-    EDIT_RECT = 1  # 範囲を変更
-    CREATE_RECT = 2
-    EDIT_CHILD_RECT = 3
-
-
-hoverOffset = 3
-
-
-class VideoRect:
-    def __init__(self, start: float, end: float):
-        self.start = start
-        self.end = end
+from VideoPlayer import VideoPlayer, VideoData
+from GUIProperty import GUIProperty
+import cv2
+from utils import pixelToTime, timeToPixel
+from RectSelector import RectSelectWidget
+import json
+import os
 
 
 class MainWindow(QMainWindow):
@@ -31,14 +22,67 @@ class MainWindow(QMainWindow):
 
         self.setGeometry(300, 50, 400, 350)
         self.setWindowTitle("MovieAnnotation")
+        self.video_path = ""
+        menubar = self.menuBar()
+        filemenu = menubar.addMenu("&File")
+
+        self.open_act = QAction("開く")
+        self.open_act.setShortcut("Ctrl+O")  # shortcut
+        self.open_act.triggered.connect(self.openVideo)  # open_actとメソッドを紐づける
+        filemenu.addAction(self.open_act)
+
+        self.save_act = QAction("保存")
+        self.save_act.setShortcut("Ctrl+S")
+        self.save_act.setEnabled(False)
+        self.save_act.triggered.connect(self.save)
+        filemenu.addAction(self.save_act)
 
         # QSplitterの作成
         splitter = QSplitter(Qt.Vertical)  # 水平方向に分割
-        text_edit1 = QTextEdit("Left Widget")
-        rect_selector = RectSelectWidget(1000)
+        splitter_palette = splitter.palette()
+        splitter_palette.setColor(QPalette.ColorRole.Window, QColor("black"))
+        splitter.setPalette(splitter_palette)
 
-        splitter.addWidget(text_edit1)
-        splitter.addWidget(rect_selector)
+        time = GUIProperty(0)
+        self.x_offset = GUIProperty(0)
+        self.x_offset.addListener(self, self.onXOffsetChanged)
+        self.video_data = GUIProperty(None)
+        self.video_data.addListener(self, self.onVideoDataChanged)
+        self.video_player = VideoPlayer(time, self.video_data)
+
+        self.valid_button_pressed = False
+        self.danger_button_pressed = False
+        button_widget_layout = QHBoxLayout()
+
+        self.valid_area_button = QPushButton()
+        self.valid_area_button.setText("有効")
+        self.valid_area_button.clicked.connect(self.onValidButtonClicked)
+        self.setValidButtonEnabled(False)
+        button_widget_layout.addWidget(self.valid_area_button)
+
+        self.danger_area_button = QPushButton()
+        self.danger_area_button.setText("危険")
+        self.danger_area_button.clicked.connect(self.onDangerButtonClicked)
+        self.setDangerButtonEnabled(False)
+        button_widget_layout.addWidget(self.danger_area_button)
+
+        top_widget = QWidget()
+        top_widget_layout = QVBoxLayout(top_widget)
+        top_widget_layout.addWidget(self.video_player)
+        top_widget_layout.addLayout(button_widget_layout)
+
+        bottom_widget = QWidget()
+        bottom_widget_layout = QVBoxLayout(bottom_widget)
+        self.rect_selector = RectSelectWidget(time, self.x_offset, self.video_data)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setEnabled(False)
+        self.slider.valueChanged.connect(self.onSliderPositionChanged)
+
+        bottom_widget_layout.addWidget(self.rect_selector)
+        bottom_widget_layout.addWidget(self.slider)
+
+        splitter.addWidget(top_widget)
+        splitter.addWidget(bottom_widget)
         splitter.setSizes([300, 100])
 
         # レイアウトに追加
@@ -50,300 +94,81 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(container)
 
+    def onValidButtonClicked(self):
+        self.valid_button_pressed = not self.valid_button_pressed
+        self.setDangerButtonEnabled(self.valid_button_pressed)
+        self.rect_selector.onButtonStateChanged(self.valid_button_pressed, 0)
 
-class RectSelectProcessor:
+    def onDangerButtonClicked(self):
+        self.danger_button_pressed = not self.danger_button_pressed
+        self.rect_selector.onButtonStateChanged(self.danger_button_pressed, 1)
 
-    def __init__(
-        self,
-        startTime,
-        endTime,
-        depth,
-        update: Callable[[],],
-        xOffset: Callable[[], int],
-        setXOffset: Callable[[int],],
-        setCursor: Callable[[any],],
-    ):
-        self.isPressed = False
-        self._videoRect = VideoRect(startTime, endTime)
-        self.childProcessors: list[RectSelectProcessor] = []
-        self.depth = depth
-        self.update = update
-        self.xOffset = xOffset
-        self.setXOffset = setXOffset
-        self.setCursor = setCursor
-        self.dragAction = None
-        self.point = QPoint(0, 0)
+    def setDangerButtonEnabled(self, enabled: bool):
+        self.danger_area_button.setEnabled(enabled)
+        if not enabled and self.danger_button_pressed:
+            self.danger_button_pressed = False
+            self.rect_selector.onButtonStateChanged(False, 1)
 
-    def videoRect(self) -> VideoRect:
-        return self._videoRect
+    def setValidButtonEnabled(self, enabled: bool):
+        self.valid_area_button.setEnabled(enabled)
 
-    def setVideoRect(self, videoRect: VideoRect):
-        self._videoRect = videoRect
-        self.update()
+    def openVideo(self):
+        fileName, _ = QFileDialog.getOpenFileName(
+            self,
+            "Selecciona los mediose",
+            ".",
+            "Video Files (*.mp4 *.flv *.ts *.mts *.avi *.wmv)",
+        )
 
-    def onClick(self, point: QPoint, button):
-        if not self.isPressed:
-            self.isPressed = True
-            self.point: QPoint = point
-            print(button)
-            if button == Qt.LeftButton:
-                clickedEdge = self.onClipEdge(self.point)
-                if clickedEdge != None:
-                    childProcesser = clickedEdge[0]
-                    self.targetProcessor = childProcesser
-                    if clickedEdge[1] == True:
-                        self.firstPixel = timeToPixel(childProcesser.videoRect().end)
-                    else:
-                        self.firstPixel = timeToPixel(childProcesser.videoRect().start)
-                    self.dragAction = DragAction.CREATE_RECT
-                else:
-                    if self.onRect(self.point) and self.depth <= 0:
-                        rect = self.onRect(self.point)
-                        self.dragAction = DragAction.EDIT_CHILD_RECT
-                        self.targetProcessor = rect
-                        rect.onClick(point, button)
-                    else:
-                        self.dragAction = DragAction.MOVE
-            elif self.onRect(self.point) and self.depth <= 0:
-                rect = self.onRect(self.point)
-                self.dragAction = DragAction.EDIT_CHILD_RECT
-                self.targetProcessor = rect
-                rect.onClick(point, button)
-            elif self.isInParentRect(self.point.x()):
-                self.dragAction = DragAction.CREATE_RECT
-                self.firstPixel = self.relToAbs(self.point.x())
-                startTime = pixelToTime(self.firstPixel)
-                endTime = pixelToTime(self.firstPixel)
-                newProcessor = RectSelectProcessor(
-                    startTime,
-                    endTime,
-                    self.depth + 1,
-                    self.update,
-                    self.xOffset,
-                    self.setXOffset,
-                    self.setCursor,
-                )
-                self.childProcessors.append(newProcessor)
-                self.targetProcessor = newProcessor
+        if fileName != "":
+            self.setVideoPath(fileName)
 
-        self.update()
+    def save(self):
+        if self.video_path != "":
+            base = os.path.splitext(self.video_path)[0]  # 拡張子を除いた部分を取得
+            new_path = f"{base}.txt"  # 新しい拡張子を追加
+            f = open(new_path, "w")
+            export_object = self.rect_selector.getExportObject()
+            text = json.dumps(export_object)
+            f.write(text)
+            f.close()
 
-    def mouseMoveEvent(self, point: QPoint):
-        oldPoint = self.point
-        self.point = point
-        if self.dragAction == DragAction.MOVE:
-            self.setXOffset(self.xOffset() + point.x() - oldPoint.x())
-        elif self.dragAction == DragAction.EDIT_RECT:
-            pass
-        elif self.dragAction == DragAction.CREATE_RECT:
-            mouse_x = min(self.absToRel(timeToPixel(self._videoRect.end)), point.x())
-            mouse_x = max(mouse_x, self.absToRel(self._videoRect.start))
-            absX = self.relToAbs(mouse_x)
-            start = pixelToTime(min(absX, self.firstPixel))
-            end = pixelToTime(max(absX, self.firstPixel))
-            self.targetProcessor.setVideoRect(VideoRect(start, end))
-        elif self.dragAction == DragAction.EDIT_CHILD_RECT:
-            self.targetProcessor.mouseMoveEvent(point)
-        elif self.onClipEdge(point) != None:
-            self.setCursor(Qt.CursorShape.SizeHorCursor)
+    def setVideoPath(self, path):
+        self.video_path = path
+        video = cv2.VideoCapture(path)
+        length = self.video_player.setVideo(video)
+        self.rect_selector.onVideoChanged(length)
+
+    def onVideoDataChanged(self, source, value):
+        if value == None:
+            self.slider.setEnabled(False)
+            self.setValidButtonEnabled(False)
+            self.save_act.setEnabled(False)
         else:
-            rect = self.onRect(self.point)
-            if rect != None:
-                rect.mouseMoveEvent(point)
-            else:
-                self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.slider.setMinimum(0)
+            self.slider.setMaximum(value.getFrameCount())
+            self.slider.setEnabled(True)
+            self.setValidButtonEnabled(True)
+            self.save_act.setEnabled(True)
 
-        self.update()
-
-    def mouseReleaseEvent(self, point: QPoint):
-        if self.isPressed:
-            self.isPressed = False
-            if self.dragAction == DragAction.EDIT_CHILD_RECT:
-                self.targetProcessor.mouseReleaseEvent(point)
-            self.dragAction = None
-            self.childProcessors = mergeClipRect(self.childProcessors)
+    def onSliderPositionChanged(self, frame):
+        video_data = self.video_data.getValue()
+        if video_data:
+            self.x_offset.setValue(self, -1 * timeToPixel(frame / video_data.getFPS()))
             self.update()
 
-    def onClipEdge(self, point: QPoint) -> tuple[RectSelectProcessor, bool] | None:
-        for childProcessor in self.childProcessors:
-            childRect = childProcessor.videoRect()
-            start = self.absToRel(timeToPixel(childRect.start))
-            end = self.absToRel(timeToPixel(childRect.end))
-            x = point.x()
-            if -hoverOffset <= x - start < hoverOffset:
-                return (childProcessor, True)
-            elif -hoverOffset <= end - x < hoverOffset:
-                return (childProcessor, False)
-        return None
-
-    def onRect(self, point: QPoint) -> RectSelectProcessor | None:
-        for childProcessor in self.childProcessors:
-            rect = childProcessor.videoRect()
-            start = self.absToRel(timeToPixel(rect.start))
-            end = self.absToRel(timeToPixel(rect.end))
-            if start + hoverOffset <= point.x() <= end + hoverOffset:
-                return childProcessor
-        return None
-
-    # 絶対座標から現在のオフセットを勘案した画面上の座標に変換
-    def absToRel(self, x: int):
-        return x + self.xOffset()
-
-    # 画面上の座標から絶対座標に変換
-    def relToAbs(self, x: int):
-        return x - self.xOffset()
-
-    def isInParentRect(self, x: int):
-        return self.absToRel(
-            timeToPixel(self._videoRect.start)
-        ) <= x and x <= self.absToRel(timeToPixel(self._videoRect.end))
-
-
-class RectSelectWidget(QWidget):
-    def __init__(
-        self,
-        length,
-        parent=None,
-    ):
-        super(RectSelectWidget, self).__init__(parent)
-        self.x_offset = 0
-        self.setMouseTracking(True)
-        self.parentProcessor = RectSelectProcessor(
-            0,
-            length,
-            0,
-            self.update,
-            lambda: self.x_offset,
-            self.setXOffset,
-            self.setCursor,
-        )
-
-    def setXOffset(self, xOffset: int):
-        self.x_offset = xOffset
-
-    def mousePressEvent(self, event):
-        self.parentProcessor.onClick(event.pos(), event.button())
-
-    def mouseMoveEvent(self, event):
-        self.parentProcessor.mouseMoveEvent(event.pos())
-
-    def mouseReleaseEvent(self, event):
-        self.parentProcessor.mouseReleaseEvent(event.pos())
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.begin(self)
-        parentRect = self.parentProcessor.videoRect()
-        parentStartTime = parentRect.start
-        parentEndTime = parentRect.end
-        parentStartPixel = self.absToRel(timeToPixel(parentStartTime))
-        parentEndPixel = self.absToRel(timeToPixel(parentEndTime))
-        painter.fillRect(
-            parentStartPixel,
-            0,
-            parentEndPixel - parentStartPixel,
-            self.height(),
-            Qt.yellow,
-        )
-
-        painter.setBrush(Qt.red)
-        for x in range(0, self.size().width()):
-            if (x - self.x_offset) % 10 == 0:
-                painter.drawLine(x, 0, x, self.height())
-
-        for childProcessor in self.parentProcessor.childProcessors:
-            painter.setBrush(Qt.gray)
-            childRect = childProcessor.videoRect()
-            startPixel = self.absToRel(timeToPixel(childRect.start))
-            endPixel = self.absToRel(timeToPixel(childRect.end))
-            width = endPixel - startPixel
-            painter.drawRect(startPixel, 0, width, self.height())
-            painter.setBrush(Qt.red)
-            for childProcessor in childProcessor.childProcessors:
-                childRect = childProcessor.videoRect()
-                startPixel = self.absToRel(timeToPixel(childRect.start))
-                endPixel = self.absToRel(timeToPixel(childRect.end))
-                width = endPixel - startPixel
-                painter.drawRect(startPixel, 0, width, self.height())
-
-        painter.end()
-
-    # 絶対座標から現在のオフセットを勘案した画面上の座標に変換
-    def absToRel(self, x: int):
-        return x + self.x_offset
-
-    # 画面上の座標から絶対座標に変換
-    def relToAbs(self, x: int):
-        return x - self.x_offset
-
-
-class ValidRectSelectWidget(RectSelectWidget):
-    def __init__(self, parent=None, start_x=0, parent_width=0):
-        super(ValidRectSelectWidget, self).__init__(parent, start_x, parent_width)
-
-
-def mergeClipRect(clipRects: list[RectSelectProcessor]) -> list[RectSelectProcessor]:
-    sortedList = sorted(clipRects, key=lambda a: a.videoRect().start)
-    result = []
-    while len(sortedList) != 0:
-        clipRect = sortedList.pop(0)
-        start = clipRect.videoRect().start
-        end = clipRect.videoRect().end
-        childPrecessors = list(clipRect.childProcessors)
-        while True:
-            # endがある要素のstartより大きい->交わっている
-            # 交わる要素がなくなるまでループ
-            edit = False
-            for clipRect2 in sortedList:
-                if clipRect2.videoRect().start <= end:
-                    edit = True
-                    end = max(end, clipRect2.videoRect().end)
-                    sortedList.remove(clipRect2)
-                    childPrecessors += clipRect2.childProcessors
-                    break
-            if edit == False:
-                break
-        newProcessor = RectSelectProcessor(
-            start,
-            end,
-            clipRect.depth,
-            clipRect.update,
-            clipRect.xOffset,
-            clipRect.setXOffset,
-            clipRect.setCursor,
-        )
-        newProcessor.childProcessors = mergeClipRect(childPrecessors)
-        clipChild(newProcessor)
-
-        result.append(newProcessor)
-    return result
-
-
-def clipChild(processor: RectSelectProcessor):
-    newChildren = []
-    parentRect = processor.videoRect()
-    for child in processor.childProcessors:
-        childRect = child.videoRect()
-        newStart = max(childRect.start, parentRect.start)
-        newEnd = min(childRect.end, parentRect.end)
-        if newStart < newEnd:
-            child.videoRect().start = newStart
-            child.videoRect().end = newEnd
-            newChildren.append(child)
-    processor.childProcessors = newChildren
-
-
-def pixelToTime(pixel: int) -> float:
-    return pixel
-
-
-def timeToPixel(time: float) -> int:
-    return time
+    def onXOffsetChanged(self, source, value):
+        video_data = self.video_data.getValue()
+        if source != self and video_data:
+            frame = int(pixelToTime(value) * video_data.getFPS())
+            self.slider.setValue(frame)
+            self.update()
 
 
 def main():
     app = QApplication(sys.argv)
     w = MainWindow()
+    # w.setVideoPath("C:\\Users\\arusu\\Downloads\\output-Mon18Nov2024175855GMT.mp4")
     w.show()
     w.raise_()
     app.exec_()
