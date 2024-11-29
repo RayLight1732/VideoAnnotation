@@ -89,12 +89,10 @@ def extractImage(video_path,output_path,fps):
         frame_count = video.get(cv2.CAP_PROP_FRAME_COUNT)
         step = int(original_fps/fps)
 
-        print(f"fps:{original_fps/step:.2f},step:{step}")
         current_frame = 0
         last_time = time.time()
-    
+        current_video_time = 0
         while True:
-            current_video_time = current_frame/original_fps
             
             if not isInValidArea(annotation,current_video_time):
                 nearest_valid_area_start_time = getNeraresValidAreaStartTime(annotation,current_video_time)
@@ -102,7 +100,8 @@ def extractImage(video_path,output_path,fps):
                     print_progress_bar(frame_count,frame_count)
                     return
                 else:
-                    current_frame = nearest_valid_area_start_time*original_fps
+                    current_frame = int(nearest_valid_area_start_time*original_fps)
+                    video.set(cv2.CAP_PROP_POS_FRAMES,current_frame)
             
 
             for _ in range(step):
@@ -112,6 +111,7 @@ def extractImage(video_path,output_path,fps):
                     print_progress_bar(frame_count,frame_count)
                     return
             current_video_time = current_frame/original_fps
+            print(current_video_time)
             condition = getCondition(annotation,current_video_time)
             
             if condition == Condition.SAFE:
