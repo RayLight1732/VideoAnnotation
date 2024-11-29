@@ -49,6 +49,7 @@ class RectSelectProcessor:
         self.can_touch_left = True
         self.can_touch_right = True
         self.targetProcessor = None
+        self.seek_bar_pos = 0
 
     def canTouchLeft(self) -> bool:
         return self.can_touch_left

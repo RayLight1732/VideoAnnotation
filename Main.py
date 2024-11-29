@@ -102,7 +102,6 @@ class MainWindow(QMainWindow):
 
     def onValidButtonClicked(self):
         self.__setValidButtonPressed(not self._valid_button_pressed)
-        self.setDangerButtonEnabled(self._valid_button_pressed)
 
     def onDangerButtonClicked(self):
         self.__setDangerButtonPressed(not self._danger_button_pressed)
@@ -129,8 +128,10 @@ class MainWindow(QMainWindow):
         self.rect_selector.onButtonStateChanged(self._valid_button_pressed, 0)
         if pressed:
             self._valid_area_button.setStyleSheet("background-color: #90ee90")
+            self.setDangerButtonEnabled(True)
         else:
             self._valid_area_button.setStyleSheet("background-color: #a9a9a9")
+            self.setDangerButtonEnabled(False)
 
     def setValidButtonEnabled(self, enabled: bool):
         self._valid_area_button.setEnabled(enabled)
