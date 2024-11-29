@@ -198,7 +198,6 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     w = MainWindow()
-    # w.setVideoPath("C:\\Users\\arusu\\Downloads\\output-Mon18Nov2024175855GMT.mp4")
     w.show()
     w.raise_()
     app.exec_()
