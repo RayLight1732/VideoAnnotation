@@ -44,9 +44,7 @@ def getCondition(annotation:dict,time):
 
 
 def saveImage(frame,parent,name):
-    start_exec_time = time.time()
     cv2.imwrite(os.path.join(parent,name),frame)
-    print(f"{time.time()-start_exec_time:.2f}")
 
 def print_progress_bar(current, total, bar_length=50):
     """
@@ -61,15 +59,15 @@ def print_progress_bar(current, total, bar_length=50):
     sys.stdout.write(f"\r{bar}")
     sys.stdout.flush()
 
-def extractImage(video_path,output_path,fps):
+def extractImage(video_path,output_path,fps,name_mode=False):
     if video_path != None and output_path != None and fps != None:
         base = os.path.splitext(video_path)[0]  # 拡張子を除いた部分を取得
         annotation_path = f"{base}.txt"  # 新しい拡張子を追加
-
-        danger_path = os.path.join(output_path,"danger")
-        safe_path = os.path.join(output_path,"safe")
-        os.makedirs(danger_path,exist_ok=True)
-        os.makedirs(safe_path,exist_ok=True)
+        if not name_mode:
+            danger_path = os.path.join(output_path,"danger")
+            safe_path = os.path.join(output_path,"safe")
+            os.makedirs(danger_path,exist_ok=True)
+            os.makedirs(safe_path,exist_ok=True)
         try:
             fps = int(fps)
         except ValueError:
@@ -83,7 +81,6 @@ def extractImage(video_path,output_path,fps):
             print("annotation file does not found")
             return
         
-        print(annotation)
         video = cv2.VideoCapture(video_path)
         original_fps = int(video.get(cv2.CAP_PROP_FPS))
         frame_count = video.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -92,6 +89,8 @@ def extractImage(video_path,output_path,fps):
         current_frame = 0
         last_time = time.time()
         current_video_time = 0
+        continuous = 0
+        created_contnuous = -1
         while True:
             
             if not isInValidArea(annotation,current_video_time):
@@ -102,6 +101,7 @@ def extractImage(video_path,output_path,fps):
                 else:
                     current_frame = int(nearest_valid_area_start_time*original_fps)
                     video.set(cv2.CAP_PROP_POS_FRAMES,current_frame)
+                    continuous += 1
             
 
             for _ in range(step):
@@ -111,13 +111,22 @@ def extractImage(video_path,output_path,fps):
                     print_progress_bar(frame_count,frame_count)
                     return
             current_video_time = current_frame/original_fps
-            print(current_video_time)
             condition = getCondition(annotation,current_video_time)
             
-            if condition == Condition.SAFE:
-                saveImage(frame,safe_path,f"{int(current_frame)}.png")
-            elif condition == Condition.DANGER:
-                saveImage(frame,danger_path,f"{int(current_frame)}.png")
+            if not name_mode:
+                if condition == Condition.SAFE:
+                    saveImage(frame,safe_path,f"{int(current_frame)}.png")
+                elif condition == Condition.DANGER:
+                    saveImage(frame,danger_path,f"{int(current_frame)}.png")
+            else:
+                parent_path = os.path.join(output_path,str(continuous))
+                if created_contnuous != continuous:
+                    created_contnuous = continuous
+                    os.makedirs(parent_path,exist_ok=True)
+                if condition == Condition.SAFE:
+                    saveImage(frame,parent_path,f"safe_{int(current_frame)}.png")
+                elif condition == Condition.DANGER:
+                    saveImage(frame,parent_path,f"danger_{int(current_frame)}.png")
             
 
             current_time = time.time()
@@ -128,14 +137,24 @@ def extractImage(video_path,output_path,fps):
         print(usage)
 
 if __name__ == "__main__":
-    usage = "usage: python ImageExtractor.py <video_path> <output_path> <fps>"
+    usage = "usage: python ImageExtractor.py <video_path> <output_path> <fps> [mode|name,folder]"
     
     args = sys.argv
     if len(args) < 4:
         print(usage)
         exit()
+        
     video_path = args[1]
     output_path = args[2]
     fps = args[3]
-    extractImage(video_path,output_path,fps)
+    if len(args) >= 5:
+        mode = args[4]
+        if mode.lower() == "name":
+            extractImage(video_path,output_path,fps,True)
+        elif mode.lower() == "folder":
+            extractImage(video_path,output_path,fps,False)
+        else:
+            print("invalid mode")
+    else:
+        extractImage(video_path,output_path,fps)
 
