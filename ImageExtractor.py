@@ -124,18 +124,18 @@ def extractImage(video_path, output_path, fps, name_mode=False):
 
             if not name_mode:
                 if condition == Condition.SAFE:
-                    saveImage(frame, safe_path, f"{int(current_frame)}.png")
+                    saveImage(frame, safe_path, f"{int(current_frame):05}.png")
                 elif condition == Condition.DANGER:
-                    saveImage(frame, danger_path, f"{int(current_frame)}.png")
+                    saveImage(frame, danger_path, f"{int(current_frame):05}.png")
             else:
                 parent_path = os.path.join(output_path, str(continuous))
                 if created_contnuous != continuous:
                     created_contnuous = continuous
                     os.makedirs(parent_path, exist_ok=True)
                 if condition == Condition.SAFE:
-                    saveImage(frame, parent_path, f"{int(current_frame)}_safe.png")
+                    saveImage(frame, parent_path, f"{int(current_frame):05}_safe.png")
                 elif condition == Condition.DANGER:
-                    saveImage(frame, parent_path, f"{int(current_frame)}_danger.png")
+                    saveImage(frame, parent_path, f"{int(current_frame):05}_danger.png")
 
             current_time = time.time()
             if current_time - last_time > 0.1:
